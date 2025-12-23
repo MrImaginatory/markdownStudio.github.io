@@ -2,7 +2,7 @@
 
 A lightweight, browser-based Markdown editor with real-time preview, synchronized scrolling, and document analytics.
 
-![Markdown Studio Screenshot](https://via.placeholder.com/800x400?text=Markdown+Studio)
+![Markdown Studio Screenshot](screen.png)
 
 ## ✨ Features
 
@@ -103,3 +103,4 @@ For questions or suggestions, please open an issue on GitHub.
 ---
 
 Made with ❤️ for Markdown lovers
+
