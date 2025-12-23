@@ -5,9 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Markdown Studio</title>
     <link rel="icon" type="image/x-icon" href="favicon.svg">
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Marked.js for Markdown Parsing -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Google Material Symbols -->
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
 
     <script>
@@ -91,6 +95,14 @@
         }
         .dark .btn-active {
             background-color: #292524;
+        }
+
+        /* Mermaid Styles */
+        .mermaid {
+            display: flex;
+            justify-content: center;
+            background: transparent;
+            margin: 1.5rem 0;
         }
     </style>
 </head>
@@ -238,35 +250,56 @@
         </aside>
     </main>
 
-    <script>
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs';
+
+        // Config marked to support mermaid
+        marked.use({
+            renderer: {
+                code({ text, lang }) {
+                    if (lang === 'mermaid') {
+                        return `<div class="mermaid">${text}</div>`;
+                    }
+                    return `<pre><code class="language-${lang}">${text}</code></pre>`;
+                }
+            }
+        });
+
+        // Initialize Mermaid
+        mermaid.initialize({ startOnLoad: false, theme: 'default' });
+
         /**
          * DEFAULT CONTENT
          */
-        const defaultContent = `# Project Antigravity: SyncScroll Edition
+        const defaultContent = `# Project Antigravity: Mermaid Edition
 
 ## 1. Executive Summary
-**Antigravity** is a lightweight, zero-dependency environment for editing and visualizing Markdown content. Designed with a focus on cognitive clarity, it bridges the gap between raw syntax and visual presentation.
+**Antigravity** is a lightweight environment for editing and visualizing Markdown content. 
 
-## 2. Technical Architecture
-The application runs entirely in the browser (Client-Side).
-* **Core Engine:** Vanilla JavaScript (ES6+).
-* **Rendering:** \`marked.js\` parser for high-performance AST compilation.
-* **Styling:** Tailwind CSS for a utility-first, responsive design system.
-* **Analytics:** \`Chart.js\` for dynamic text visualization.
+## 2. Diagram Support
+We now support **Mermaid JS**! Define your diagrams in code blocks.
+
+\`\`\`mermaid
+graph TD
+    A[Write Markdown] --> B{Need Diagram?}
+    B -- Yes --> C[Use mermaid block]
+    B -- No --> D[Just text]
+    C --> E[Live Preview]
+    D --> E
+\`\`\`
 
 ## 3. Key Features
-* **SyncScroll:** Editor and Preview scroll together automatically. Try scrolling this side!
-* **View Controls:** Toggle Editor or Preview tabs using the icons in the top bar.
-* **Real-time Parsing:** Instant feedback loop between editor and preview.
-* **Adaptive Theming:** System-aware Dark/Light mode integration.
-* **Data Visualization:** Live charts analyzing text density and reading difficulty.
+* **Mermaid JS:** Flowcharts, sequence diagrams, and Gantt charts.
+* **SyncScroll:** Editor and Preview scroll together automatically.
+* **View Controls:** Toggle Editor or Preview tabs.
 
 ## 4. Usage Guide
 1.  **Write:** Type Markdown on the left.
 2.  **View:** See the result on the right.
 3.  **Analyze:** Check the right sidebar for live metrics.
-4.  **Export:** Click the "Save" icon to download your \`.md\` file.
 
+---
+*Start typing to see the analytics update in real-time...*
 `;
 
         // State
@@ -276,7 +309,8 @@ The application runs entirely in the browser (Client-Side).
             statsOpen: false,
             syncScroll: true,
             showEditor: true,
-            showPreview: true
+            showPreview: true,
+            needsMermaidRender: false
         };
 
         // DOM Elements
@@ -308,9 +342,6 @@ The application runs entirely in the browser (Client-Side).
             // Load content
             editor.value = state.content;
             
-            // Initial render
-            updatePreview();
-            
             // Theme check
             if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
                 toggleTheme(true);
@@ -327,53 +358,83 @@ The application runs entirely in the browser (Client-Side).
             // Init Charts
             initCharts();
             updateStats();
+            
+            // Initial render
+            updatePreview();
         }
 
-        // --- Logic: Markdown & Preview ---
+        // --- Logic: Markdown & Preview (Debounced) ---
         
-        function updatePreview() {
+        let debounceTimer;
+
+        async function updatePreview() {
             const raw = editor.value;
             state.content = raw;
-            
-            // Parse Markdown
-            preview.innerHTML = marked.parse(raw);
-            
-            // Update Char Count
             charCountEl.textContent = `${raw.length} chars`;
 
-            // Update Stats
-            updateStats();
+            // Debounce the heavy rendering logic
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(async () => {
+                // Parse Markdown (Sync)
+                preview.innerHTML = marked.parse(raw);
+                
+                // Update Stats
+                updateStats();
+
+                // Trigger Mermaid Render
+                await triggerMermaidRender();
+
+            }, 300); // 300ms delay
+        }
+
+        async function triggerMermaidRender() {
+            if (!state.showPreview) {
+                state.needsMermaidRender = true;
+                return;
+            }
+
+            const mermaidBlocks = document.querySelectorAll('.mermaid');
+            if (mermaidBlocks.length > 0) {
+                try {
+                    await mermaid.run({ nodes: mermaidBlocks });
+                    state.needsMermaidRender = false;
+                } catch (e) {
+                    console.warn('Mermaid rendering skipped or failed:', e);
+                }
+            }
         }
 
         editor.addEventListener('input', updatePreview);
 
-        // --- Logic: Sync Scroll ---
+        // --- Logic: Sync Scroll (FIXED) ---
         
-        let isSyncingLeft = false;
-        let isSyncingRight = false;
+        // Track which panel the user is actively using
+        let activeScrollPanel = 'editor';
 
+        editor.addEventListener('mouseenter', () => { activeScrollPanel = 'editor'; });
+        editor.addEventListener('touchstart', () => { activeScrollPanel = 'editor'; });
+        editor.addEventListener('focus', () => { activeScrollPanel = 'editor'; });
+
+        preview.addEventListener('mouseenter', () => { activeScrollPanel = 'preview'; });
+        preview.addEventListener('touchstart', () => { activeScrollPanel = 'preview'; });
+        preview.addEventListener('focus', () => { activeScrollPanel = 'preview'; });
+
+        // Editor Scroll Listener
         editor.addEventListener('scroll', () => {
-            if (!state.syncScroll || isSyncingLeft) return;
-            isSyncingRight = true;
+            // Only sync if enabled AND user is interacting with editor
+            if (!state.syncScroll || activeScrollPanel !== 'editor') return; 
             
-            // Calculate percentage
             const percentage = editor.scrollTop / (editor.scrollHeight - editor.clientHeight);
-            // Apply to preview
             preview.scrollTop = percentage * (preview.scrollHeight - preview.clientHeight);
-            
-            setTimeout(() => { isSyncingRight = false; }, 50);
         });
 
+        // Preview Scroll Listener
         preview.addEventListener('scroll', () => {
-            if (!state.syncScroll || isSyncingRight) return;
-            isSyncingLeft = true;
-
-            // Calculate percentage
+            // Only sync if enabled AND user is interacting with preview
+            if (!state.syncScroll || activeScrollPanel !== 'preview') return;
+            
             const percentage = preview.scrollTop / (preview.scrollHeight - preview.clientHeight);
-            // Apply to editor
             editor.scrollTop = percentage * (editor.scrollHeight - editor.clientHeight);
-
-            setTimeout(() => { isSyncingLeft = false; }, 50);
         });
 
         // Toggle Sync Button
@@ -404,6 +465,10 @@ The application runs entirely in the browser (Client-Side).
             if (state.showPreview) {
                 sectionPreview.classList.remove('hidden');
                 btnViewPreview.classList.add('btn-active');
+                
+                if (state.needsMermaidRender) {
+                    setTimeout(triggerMermaidRender, 50);
+                }
             } else {
                 sectionPreview.classList.add('hidden');
                 btnViewPreview.classList.remove('btn-active');
@@ -432,14 +497,18 @@ The application runs entirely in the browser (Client-Side).
                 html.classList.add('dark');
                 btnTheme.innerHTML = '<span class="material-symbols-outlined">dark_mode</span>'; 
                 state.isDark = true;
+                mermaid.initialize({ theme: 'dark' });
             } else {
                 html.classList.remove('dark');
                 btnTheme.innerHTML = '<span class="material-symbols-outlined">light_mode</span>';
                 state.isDark = false;
+                mermaid.initialize({ theme: 'default' });
             }
             
             // Update Charts Theme
             updateChartsTheme();
+            // Re-render Mermaid because theme changed
+            triggerMermaidRender();
         }
 
         btnTheme.addEventListener('click', () => toggleTheme());
@@ -453,6 +522,7 @@ The application runs entirely in the browser (Client-Side).
             const reader = new FileReader();
             reader.onload = (e) => {
                 editor.value = e.target.result;
+                editor.scrollTop = 0; // Reset scroll to top for new file
                 updatePreview();
             };
             reader.readAsText(file);
@@ -580,8 +650,8 @@ The application runs entirely in the browser (Client-Side).
         });
         
         btnCloseStats.addEventListener('click', () => {
-            panelStats.classList.add('translate-x-full');
-            state.statsOpen = false;
+             panelStats.classList.add('translate-x-full');
+             state.statsOpen = false;
         });
 
         // Run
